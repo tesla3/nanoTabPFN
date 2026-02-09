@@ -1,18 +1,141 @@
+import math
+
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.nn.modules.transformer import MultiheadAttention, Linear, LayerNorm
+from torch.nn.modules.transformer import Linear, LayerNorm
+
+
+class HypernetMultiheadAttention(nn.Module):
+    """
+    Multi-head attention with optional hypernetwork variant from
+    "Attention as a Hypernetwork" (arxiv 2406.05816).
+
+    In the hypernetwork variant, attention weights are applied twice:
+      1) First application contracts over heads to produce an intermediate
+         of shape [B, Q, K, D_head].
+      2) An optional activation (SiLU) is applied.
+      3) Second application contracts over keys, reintroducing the head
+         dimension, producing [B, Q, H, D_head] which is then projected out.
+
+    Args:
+        embed_dim: Total embedding dimension.
+        num_heads: Number of attention heads.
+        target_network: One of "default", "mlp_silu", "mlp_linear".
+            "default" with attn_norm="softmax" delegates to standard MultiheadAttention.
+        attn_norm: One of "softmax", "rms_head", "none".
+            "softmax" applies softmax over the key dimension.
+            "rms_head" applies RMS normalization across the head dimension.
+            "none" uses raw (scaled) dot-product scores.
+        batch_first: If True, input/output tensors are [B, S, E]. Must be True.
+        device: Device for parameters.
+        dtype: Dtype for parameters.
+    """
+
+    def __init__(self, embed_dim: int, num_heads: int,
+                 target_network: str = "default", attn_norm: str = "softmax",
+                 batch_first: bool = True, device=None, dtype=None):
+        super().__init__()
+        assert batch_first, "HypernetMultiheadAttention only supports batch_first=True"
+        assert embed_dim % num_heads == 0, (
+            f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
+        )
+
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.target_network = target_network
+        self.attn_norm = attn_norm
+
+        factory_kwargs = {"device": device, "dtype": dtype}
+        self.q_proj = Linear(embed_dim, embed_dim, **factory_kwargs)
+        self.k_proj = Linear(embed_dim, embed_dim, **factory_kwargs)
+        self.v_proj = Linear(embed_dim, embed_dim, **factory_kwargs)
+        self.out_proj = Linear(embed_dim, embed_dim, **factory_kwargs)
+
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
+        """
+        Args:
+            query: [B, Q, E]
+            key:   [B, K, E]
+            value: [B, K, E]
+
+        Returns:
+            Tuple of (output [B, Q, E], None).
+            The second element is None for API compatibility with MultiheadAttention
+            which returns (output, attn_weights). We always return None for weights.
+        """
+        B, Q_len, E = query.shape
+        _, K_len, _ = key.shape
+        H = self.num_heads
+        D = self.head_dim
+
+        # Project to Q, K, V and reshape to [B, H, S, D]
+        q = self.q_proj(query).view(B, Q_len, H, D).transpose(1, 2)
+        k = self.k_proj(key).view(B, K_len, H, D).transpose(1, 2)
+        v = self.v_proj(value).view(B, K_len, H, D).transpose(1, 2)
+
+        if self.target_network == "default" and self.attn_norm == "softmax":
+            # Use PyTorch's optimized scaled_dot_product_attention
+            # q, k, v: [B, H, S, D]
+            x = F.scaled_dot_product_attention(q, k, v)
+            # x: [B, H, Q, D] -> [B, Q, H, D]
+            x = x.transpose(1, 2)
+        else:
+            # Manual attention weights needed for hypernetwork or non-softmax norm
+            scale = 1.0 / math.sqrt(D)
+            # q: [B, H, Q, D], k: [B, H, K, D] -> attn_scores: [B, H, Q, K]
+            attn_scores = torch.matmul(q, k.transpose(-2, -1)) * scale
+
+            # Normalize attention scores
+            if self.attn_norm == "softmax":
+                attn_weights = torch.softmax(attn_scores, dim=-1)
+            elif self.attn_norm == "rms_head":
+                rms = torch.sqrt(torch.mean(attn_scores ** 2, dim=1, keepdim=True) + 1e-8)
+                attn_weights = attn_scores / rms
+            elif self.attn_norm == "none":
+                attn_weights = attn_scores
+            else:
+                raise ValueError(f"Unknown attn_norm: {self.attn_norm}")
+
+            # v: [B, H, K, D]
+            if self.target_network == "default":
+                # Standard: [B, H, Q, K] @ [B, H, K, D] -> [B, H, Q, D] -> [B, Q, H, D]
+                x = torch.matmul(attn_weights, v).transpose(1, 2)
+            elif self.target_network == "mlp_silu":
+                # Hypernetwork with SiLU
+                # First: contract over H -> [B, Q, K, D]
+                x = torch.einsum("bhqk,bhkd->bqkd", attn_weights, v)
+                x = F.silu(x)
+                # Second: contract over K -> [B, Q, H, D]
+                x = torch.einsum("bhqk,bqkd->bqhd", attn_weights, x)
+            elif self.target_network == "mlp_linear":
+                # Hypernetwork linear
+                x = torch.einsum("bhqk,bhkd->bqkd", attn_weights, v)
+                x = torch.einsum("bhqk,bqkd->bqhd", attn_weights, x)
+            else:
+                raise ValueError(f"Unknown target_network: {self.target_network}")
+
+        # Reshape [B, Q, H, D] -> [B, Q, E] and project
+        x = x.reshape(B, Q_len, E)
+        x = self.out_proj(x)
+        return x, None
 
 class NanoTabPFNModel(nn.Module):
-    def __init__(self, embedding_size: int, num_attention_heads: int, mlp_hidden_size: int, num_layers: int, num_outputs: int):
+    def __init__(self, embedding_size: int, num_attention_heads: int, mlp_hidden_size: int,
+                 num_layers: int, num_outputs: int,
+                 target_network: str = "default", attn_norm: str = "softmax"):
         """ Initializes the feature/target encoder, transformer stack and decoder """
         super().__init__()
         self.feature_encoder = FeatureEncoder(embedding_size)
         self.target_encoder = TargetEncoder(embedding_size)
         self.transformer_blocks = nn.ModuleList()
         for _ in range(num_layers):
-            self.transformer_blocks.append(TransformerEncoderLayer(embedding_size, num_attention_heads, mlp_hidden_size))
+            self.transformer_blocks.append(TransformerEncoderLayer(
+                embedding_size, num_attention_heads, mlp_hidden_size,
+                target_network=target_network, attn_norm=attn_norm,
+            ))
         self.decoder = Decoder(embedding_size, mlp_hidden_size, num_outputs)
 
     def forward(self, src: tuple[torch.Tensor, torch.Tensor], train_test_split_index: int) -> torch.Tensor:
@@ -97,10 +220,19 @@ class TransformerEncoderLayer(nn.Module):
     """
     def __init__(self, embedding_size: int, nhead: int, mlp_hidden_size: int,
                  layer_norm_eps: float = 1e-5, batch_first: bool = True,
+                 target_network: str = "default", attn_norm: str = "softmax",
                  device=None, dtype=None):
         super().__init__()
-        self.self_attention_between_datapoints = MultiheadAttention(embedding_size, nhead, batch_first=batch_first, device=device, dtype=dtype)
-        self.self_attention_between_features = MultiheadAttention(embedding_size, nhead, batch_first=batch_first, device=device, dtype=dtype)
+        self.self_attention_between_datapoints = HypernetMultiheadAttention(
+            embedding_size, nhead, target_network=target_network,
+            attn_norm=attn_norm, batch_first=batch_first,
+            device=device, dtype=dtype,
+        )
+        self.self_attention_between_features = HypernetMultiheadAttention(
+            embedding_size, nhead, target_network=target_network,
+            attn_norm=attn_norm, batch_first=batch_first,
+            device=device, dtype=dtype,
+        )
 
         self.linear1 = Linear(embedding_size, mlp_hidden_size, device=device, dtype=dtype)
         self.linear2 = Linear(mlp_hidden_size, embedding_size, device=device, dtype=dtype)
