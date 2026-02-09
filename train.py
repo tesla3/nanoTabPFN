@@ -267,6 +267,18 @@ class PriorDumpDataLoader(DataLoader):
         return self.num_steps
 
 if __name__ == "__main__":
+    import argparse
+    import functools
+    import json
+    import os
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_steps", type=int, default=2500)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=4e-3)
+    parser.add_argument("--steps_per_eval", type=int, default=50)
+    args = parser.parse_args()
+
     device = get_default_device()
     print("Loading OpenML TabArena datasets...")
     datasets = get_openml_datasets()
@@ -278,9 +290,31 @@ if __name__ == "__main__":
         num_layers=3,
         num_outputs=2
     )
-    import functools
     eval_func = functools.partial(eval_model, datasets=datasets)
-    prior = PriorDumpDataLoader("300k_150x5_2.h5", num_steps=2500, batch_size=32, device=device)
-    model, history = train(model, prior, lr=4e-3, steps_per_eval=50, eval_func=eval_func)
+    prior = PriorDumpDataLoader("300k_150x5_2.h5", num_steps=args.num_steps, batch_size=args.batch_size, device=device)
+    model, history = train(model, prior, lr=args.lr, steps_per_eval=args.steps_per_eval, eval_func=eval_func)
+
     print("Final evaluation:")
-    print(eval_model(NanoTabPFNClassifier(model, device), datasets=datasets))
+    final_scores = eval_model(NanoTabPFNClassifier(model, device), datasets=datasets)
+    print(final_scores)
+
+    # Save results
+    results = {
+        "config": {
+            "embedding_size": 96,
+            "num_attention_heads": 4,
+            "mlp_hidden_size": 192,
+            "num_layers": 3,
+            "num_outputs": 2,
+            "lr": args.lr,
+            "num_steps": args.num_steps,
+            "batch_size": args.batch_size,
+        },
+        "n_params": sum(p.numel() for p in model.parameters()),
+        "final_metrics": final_scores,
+        "history": [{"train_time": t, "scores": s} for t, s in history],
+    }
+    results_path = os.path.join(os.path.dirname(__file__) or ".", "train_results.json")
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Results saved to {results_path}")
