@@ -3,12 +3,17 @@ import time
 
 import h5py
 import numpy as np
+import pandas as pd
 import schedulefree
 import torch
+import openml
+from openml.tasks import TaskType
 from model import NanoTabPFNClassifier, NanoTabPFNModel
-from sklearn.datasets import *
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import LabelEncoder, OrdinalEncoder, FunctionTransformer
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -26,25 +31,116 @@ def get_default_device():
     if torch.cuda.is_available(): device = "cuda"
     return device
 
-datasets = []
-datasets.append(train_test_split(*load_breast_cancer(return_X_y=True), test_size=0.5, random_state=0))
 
-def eval(classifier):
-    scores = {
-        "roc_auc": 0,
-        "acc": 0,
-        "balanced_acc": 0
-    }
-    for  X_train, X_test, y_train, y_test in datasets:
-         classifier.fit(X_train, y_train)
-         prob = classifier.predict_proba(X_test)
-         pred = prob.argmax(axis=1) # avoid a second forward pass by not calling predict
-         if prob.shape[1]==2:
-             prob = prob[:,:1]
-         scores["roc_auc"] += float(roc_auc_score(y_test, prob, multi_class="ovr"))
-         scores["acc"] += float(accuracy_score(y_test, pred))
-         scores["balanced_acc"] += float(balanced_accuracy_score(y_test, pred))
-    scores = {k:v/len(datasets) for k,v in scores.items()}
+def _get_feature_preprocessor(X):
+    """Fits a preprocessor that encodes categorical features and removes constant features."""
+    X = pd.DataFrame(X)
+    num_mask = []
+    cat_mask = []
+    for col in X:
+        unique_non_nan_entries = X[col].dropna().unique()
+        if len(unique_non_nan_entries) <= 1:
+            num_mask.append(False)
+            cat_mask.append(False)
+            continue
+        non_nan_entries = X[col].notna().sum()
+        numeric_entries = pd.to_numeric(X[col], errors='coerce').notna().sum()
+        num_mask.append(non_nan_entries == numeric_entries)
+        cat_mask.append(non_nan_entries != numeric_entries)
+
+    num_mask = np.array(num_mask)
+    cat_mask = np.array(cat_mask)
+
+    num_transformer = Pipeline([
+        ("to_pandas", FunctionTransformer(lambda x: pd.DataFrame(x) if not isinstance(x, pd.DataFrame) else x)),
+        ("to_numeric", FunctionTransformer(lambda x: x.apply(pd.to_numeric, errors='coerce').to_numpy())),
+    ])
+    cat_transformer = Pipeline([
+        ('encoder', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=np.nan)),
+    ])
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', num_transformer, num_mask),
+            ('cat', cat_transformer, cat_mask)
+        ]
+    )
+    return preprocessor
+
+
+def get_openml_datasets(max_features=20, new_instances=600, target_classes_filter=2):
+    """Load OpenML TabArena datasets, filtered and subsampled."""
+    task_ids = [
+        363612, 363613, 363614, 363615, 363616, 363618, 363619, 363620,
+        363621, 363623, 363624, 363625, 363626, 363627, 363628, 363629,
+        363630, 363631, 363632, 363671, 363672, 363673, 363674, 363675,
+        363676, 363677, 363678, 363679, 363681, 363682, 363683, 363684,
+        363685, 363686, 363689, 363691, 363693, 363694, 363696, 363697,
+        363698, 363699, 363700, 363702, 363704, 363705, 363706, 363707,
+        363708, 363711, 363712
+    ]  # TabArena v0.1
+    datasets = {}
+    for task_id in task_ids:
+        task = openml.tasks.get_task(task_id, download_splits=False)
+        if task.task_type_id != TaskType.SUPERVISED_CLASSIFICATION:
+            continue
+        dataset = task.get_dataset(download_data=False)
+
+        if (dataset.qualities["NumberOfFeatures"] > max_features
+                or dataset.qualities["NumberOfClasses"] > target_classes_filter
+                or dataset.qualities["PercentageOfInstancesWithMissingValues"] > 0
+                or dataset.qualities["MinorityClassPercentage"] < 2.5):
+            continue
+        X, y, categorical_indicator, attribute_names = dataset.get_data(
+            target=task.target_name, dataset_format="dataframe"
+        )
+        if new_instances < len(y):
+            _, X_sub, _, y_sub = train_test_split(
+                X, y, test_size=new_instances, stratify=y, random_state=0,
+            )
+        else:
+            X_sub = X
+            y_sub = y
+
+        X_np = X_sub.to_numpy(copy=True)
+        y_np = y_sub.to_numpy(copy=True)
+        label_encoder = LabelEncoder()
+        y_np = label_encoder.fit_transform(y_np)
+
+        preprocessor = _get_feature_preprocessor(X_np)
+        X_np = preprocessor.fit_transform(X_np).astype(np.float64)
+        datasets[dataset.name] = (X_np, y_np)
+
+    return datasets
+
+
+_skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+
+
+def eval_model(classifier, datasets=None):
+    """Evaluate classifier on datasets using 5-fold CV ROC AUC.
+    If datasets is None, loads OpenML TabArena datasets."""
+    if datasets is None:
+        datasets = get_openml_datasets()
+    scores = {}
+    for name, (X, y) in datasets.items():
+        targets = []
+        probabilities = []
+        for train_idx, test_idx in _skf.split(X, y):
+            X_train, X_test = X[train_idx], X[test_idx]
+            y_train, y_test = y[train_idx], y[test_idx]
+            targets.append(y_test)
+            classifier.fit(X_train, y_train)
+            prob = classifier.predict_proba(X_test)
+            if prob.shape[1] == 2:
+                prob = prob[:, 1]
+            probabilities.append(prob)
+        targets = np.concatenate(targets, axis=0)
+        probabilities = np.concatenate(probabilities, axis=0)
+        scores[f"{name}/ROC AUC"] = float(roc_auc_score(targets, probabilities, multi_class="ovr"))
+
+    avg = np.mean(list(scores.values()))
+    scores["ROC AUC"] = float(avg)
     return scores
 
 def train(model: NanoTabPFNModel, prior: DataLoader,
@@ -172,6 +268,9 @@ class PriorDumpDataLoader(DataLoader):
 
 if __name__ == "__main__":
     device = get_default_device()
+    print("Loading OpenML TabArena datasets...")
+    datasets = get_openml_datasets()
+    print(f"Loaded {len(datasets)} datasets")
     model = NanoTabPFNModel(
         embedding_size=96,
         num_attention_heads=4,
@@ -179,7 +278,9 @@ if __name__ == "__main__":
         num_layers=3,
         num_outputs=2
     )
+    import functools
+    eval_func = functools.partial(eval_model, datasets=datasets)
     prior = PriorDumpDataLoader("300k_150x5_2.h5", num_steps=2500, batch_size=32, device=device)
-    model, history = train(model, prior, lr=4e-3, steps_per_eval=25)
+    model, history = train(model, prior, lr=4e-3, steps_per_eval=50, eval_func=eval_func)
     print("Final evaluation:")
-    print(eval(NanoTabPFNClassifier(model, device)))
+    print(eval_model(NanoTabPFNClassifier(model, device), datasets=datasets))
