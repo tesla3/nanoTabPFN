@@ -1,0 +1,2 @@
+{'Amazon_employee_access/ROC AUC': 0.6337294563843237, 'bank-marketing/ROC AUC': 0.683342318059299, 'Bank_Customer_Churn/ROC AUC': 0.8152994032512517, 'blood-transfusion-service-center/ROC AUC': 0.7595293109516305, 'churn/ROC AUC': 0.8580468303826384, 'diabetes/ROC AUC': 0.8206047553200602, 'E-CommereShippingData/ROC AUC': 0.7119211413269311, 'Is-this-a-good-customer/ROC AUC': 0.5419615214506855, 'online_shoppers_intention/ROC AUC': 0.8978600665945579, 'seismic-bumps/ROC AUC': 0.69239910416381, 'ROC AUC': 0.7414693907885188}
+

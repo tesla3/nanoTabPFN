@@ -1,0 +1,108 @@
+{
+  "config": {
+    "embedding_size": 96,
+    "num_attention_heads": 4,
+    "mlp_hidden_size": 192,
+    "num_layers": 3,
+    "num_outputs": 2,
+    "lr": 0.004,
+    "num_steps": 500,
+    "batch_size": 32
+  },
+  "n_params": 356066,
+  "final_metrics": {
+    "Amazon_employee_access/ROC AUC": 0.609102402022756,
+    "bank-marketing/ROC AUC": 0.6522102425876011,
+    "Bank_Customer_Churn/ROC AUC": 0.8035016119075382,
+    "blood-transfusion-service-center/ROC AUC": 0.7291548713868189,
+    "churn/ROC AUC": 0.8323015419760137,
+    "diabetes/ROC AUC": 0.7779830883882574,
+    "E-CommereShippingData/ROC AUC": 0.7075118888221985,
+    "Is-this-a-good-customer/ROC AUC": 0.5333370190181336,
+    "online_shoppers_intention/ROC AUC": 0.8311594663951984,
+    "seismic-bumps/ROC AUC": 0.6748023218611454,
+    "ROC AUC": 0.7151064454365661
+  },
+  "history": [
+    {
+      "train_time": 3.7820231914520264,
+      "scores": {
+        "Amazon_employee_access/ROC AUC": 0.5154487989886221,
+        "bank-marketing/ROC AUC": 0.5460646900269541,
+        "Bank_Customer_Churn/ROC AUC": 0.5910556279580218,
+        "blood-transfusion-service-center/ROC AUC": 0.4151581460115377,
+        "churn/ROC AUC": 0.7177155910908053,
+        "diabetes/ROC AUC": 0.5197934384904368,
+        "E-CommereShippingData/ROC AUC": 0.441098388660603,
+        "Is-this-a-good-customer/ROC AUC": 0.42423153471915087,
+        "online_shoppers_intention/ROC AUC": 0.5925643146486819,
+        "seismic-bumps/ROC AUC": 0.6168472050824992,
+        "ROC AUC": 0.5379977735677313
+      }
+    },
+    {
+      "train_time": 7.39935564994812,
+      "scores": {
+        "Amazon_employee_access/ROC AUC": 0.5423008849557522,
+        "bank-marketing/ROC AUC": 0.5384636118598383,
+        "Bank_Customer_Churn/ROC AUC": 0.6081178407298168,
+        "blood-transfusion-service-center/ROC AUC": 0.42945019969089987,
+        "churn/ROC AUC": 0.7589948600799543,
+        "diabetes/ROC AUC": 0.6851894908160892,
+        "E-CommereShippingData/ROC AUC": 0.42094510365206145,
+        "Is-this-a-good-customer/ROC AUC": 0.4280738611233967,
+        "online_shoppers_intention/ROC AUC": 0.6132849780492461,
+        "seismic-bumps/ROC AUC": 0.6244800950683305,
+        "ROC AUC": 0.5649300926025386
+      }
+    },
+    {
+      "train_time": 10.996680974960327,
+      "scores": {
+        "Amazon_employee_access/ROC AUC": 0.5433628318584071,
+        "bank-marketing/ROC AUC": 0.5584097035040432,
+        "Bank_Customer_Churn/ROC AUC": 0.6564236230194114,
+        "blood-transfusion-service-center/ROC AUC": 0.47125522180226775,
+        "churn/ROC AUC": 0.7863392347230155,
+        "diabetes/ROC AUC": 0.7726722059741309,
+        "E-CommereShippingData/ROC AUC": 0.6461401726764855,
+        "Is-this-a-good-customer/ROC AUC": 0.4284332153914197,
+        "online_shoppers_intention/ROC AUC": 0.705456936226167,
+        "seismic-bumps/ROC AUC": 0.6444535856300562,
+        "ROC AUC": 0.6212946730805403
+      }
+    },
+    {
+      "train_time": 14.617653846740723,
+      "scores": {
+        "Amazon_employee_access/ROC AUC": 0.5606068268015171,
+        "bank-marketing/ROC AUC": 0.5989218328840971,
+        "Bank_Customer_Churn/ROC AUC": 0.7362987859249605,
+        "blood-transfusion-service-center/ROC AUC": 0.715735030833499,
+        "churn/ROC AUC": 0.8323929183323815,
+        "diabetes/ROC AUC": 0.7693804378418727,
+        "E-CommereShippingData/ROC AUC": 0.6995244471120551,
+        "Is-this-a-good-customer/ROC AUC": 0.4406236178682,
+        "online_shoppers_intention/ROC AUC": 0.7910542724438506,
+        "seismic-bumps/ROC AUC": 0.6430367018602312,
+        "ROC AUC": 0.6787574871902665
+      }
+    },
+    {
+      "train_time": 18.2744243144989,
+      "scores": {
+        "Amazon_employee_access/ROC AUC": 0.58826801517067,
+        "bank-marketing/ROC AUC": 0.6489218328840971,
+        "Bank_Customer_Churn/ROC AUC": 0.8014953014610056,
+        "blood-transfusion-service-center/ROC AUC": 0.7187495218129791,
+        "churn/ROC AUC": 0.8499600228440891,
+        "diabetes/ROC AUC": 0.7725008871865784,
+        "E-CommereShippingData/ROC AUC": 0.7136986933838128,
+        "Is-this-a-good-customer/ROC AUC": 0.5074358690844759,
+        "online_shoppers_intention/ROC AUC": 0.8433543297066871,
+        "seismic-bumps/ROC AUC": 0.6564285387814799,
+        "ROC AUC": 0.7100813012315875
+      }
+    }
+  ]
+}

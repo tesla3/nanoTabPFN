@@ -1,0 +1,53 @@
+[
+  {
+    "label": "rms_head_mlp_silu_emb256_16H_lr5e-05",
+    "config": {
+      "target_network": "mlp_silu",
+      "attn_norm": "rms_head",
+      "attn_label": "rms_head_mlp_silu",
+      "embedding_size": 512,
+      "num_layers": 3,
+      "num_heads": 32,
+      "mlp_hidden_size": 1024,
+      "lr": 5e-05,
+      "arch_label": "emb256_16H_lr5e-05",
+      "num_outputs": 2
+    },
+    "n_params": 9992706,
+    "final_metrics": {
+      "Amazon_employee_access": {
+        "roc_auc": 0.6071302149178256
+      },
+      "bank-marketing": {
+        "roc_auc": 0.6332884097035041
+      },
+      "Bank_Customer_Churn": {
+        "roc_auc": 0.8061423965978463
+      },
+      "blood-transfusion-service-center": {
+        "roc_auc": 0.7596823307983045
+      },
+      "churn": {
+        "roc_auc": 0.772609937178755
+      },
+      "diabetes": {
+        "roc_auc": 0.8171171942877422
+      },
+      "E-CommereShippingData": {
+        "roc_auc": 0.7037605614294289
+      },
+      "Is-this-a-good-customer": {
+        "roc_auc": 0.527421494913755
+      },
+      "online_shoppers_intention": {
+        "roc_auc": 0.8178829717291256
+      },
+      "seismic-bumps": {
+        "roc_auc": 0.699072169660405
+      },
+      "MEAN": {
+        "roc_auc": 0.7144107681216691
+      }
+    }
+  }
+]
